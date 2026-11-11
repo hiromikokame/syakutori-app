@@ -25,6 +25,13 @@ button{cursor:pointer}
 footer{display:flex;align-items:center;gap:15px;padding:20px 3px;color:#8b958e;font-size:9px}footer span:first-child{font-weight:700;color:#68796c}footer button{border:0;background:transparent;color:#9a8179;font-size:9px;margin-left:auto;padding:4px}footer button:hover{color:#ad5949}
 @media(max-width:640px){.app-shell{padding:0 max(16px,env(safe-area-inset-right)) 28px max(16px,env(safe-area-inset-left))}.topbar{height:64px}.intro{padding:31px 0 23px}.intro-copy{font-size:11px;max-width:275px;line-height:1.7}.hero-icon{width:58px;height:54px;border-radius:16px;gap:3px}.hero-icon span{height:32px;width:9px}.hero-icon span:nth-child(2){height:26px}.hero-icon span:nth-child(3){height:20px}.steps{gap:4px;padding-bottom:15px;justify-content:space-between}.step{flex-direction:column;gap:3px;font-size:9px}.step span{width:25px;height:25px}.step-line{max-width:none;flex:1;margin:0 1px;align-self:flex-start;margin-top:19px}.panel{padding:22px 18px 19px;border-radius:15px}.panel h2{font-size:19px}.panel-copy{font-size:11px;margin:8px 0 21px}.field-grid{gap:14px 11px}.field input{height:43px;padding:10px}.field>span{font-size:10px}.note{padding:10px}.note p{font-size:9px}.button{font-size:11px;padding:11px 12px;min-height:41px}.list-heading,.entry-row{grid-template-columns:minmax(70px,1fr) minmax(67px,.8fr) minmax(48px,.55fr) 28px;gap:6px}.part-heading{grid-template-columns:minmax(72px,1.1fr) minmax(65px,.8fr) minmax(44px,.5fr) 28px}.entry-row input{height:39px;padding:8px;font-size:11px}.entry-row .delete-row{width:25px}.result-summary{gap:6px}.metric{padding:10px 9px}.metric-value{font-size:18px}.bar-card{padding:12px}.bar-title strong{font-size:11px}footer{gap:8px;font-size:8px}footer button{font-size:8px}}
 
+/* 尺取り結果はカット列と残寸法を別段に表示し、文字色を黒に揃えます。 */
+.bar-meta{display:flex;flex-direction:column;align-items:stretch;gap:6px;font-size:9px;color:#000}
+.bar-cuts{display:block}
+.bar-remainder{text-align:right;font-weight:500}
+body,body *{color:#000!important}
+body *::placeholder{color:#000!important;opacity:.6}
+
 </style>
   
 </head>
@@ -249,10 +256,8 @@ footer{display:flex;align-items:center;gap:15px;padding:20px 3px;color:#8b958e;f
     });
     requests.sort((a, b) => b.length - a.length);
 
-    const inventory = stockTypes.flatMap((stock, typeIndex) => Array.from({ length: Math.min(stock.quantity, 1000) }, (_, copy) => ({
-      typeIndex,
-      copy,
-      name: stock.name || `長尺材 ${typeIndex + 1}`,
+    const inventory = stockTypes.flatMap(stock => Array.from({ length: Math.min(stock.quantity, 1000) }, () => ({
+      name: stock.name || '長尺材',
       nominalLength: stock.length,
       length: stock.length + materialPlus,
       remaining: stock.length + materialPlus,
@@ -289,6 +294,20 @@ footer{display:flex;align-items:center;gap:15px;padding:20px 3px;color:#8b958e;f
     });
 
     return { bars, unplaced, partTypes, totalRequested: requests.length, kerf, materialPlus };
+  }
+
+  function groupIdenticalPatterns(bars) {
+    const groups = new Map();
+    bars.forEach(bar => {
+      const cutLengths = bar.cuts
+        .map(cut => Math.round(cut.length * 1000) / 1000)
+        .sort((a, b) => b - a);
+      const key = JSON.stringify([bar.name, bar.nominalLength, bar.length, cutLengths]);
+      const existing = groups.get(key);
+      if (existing) existing.quantity += 1;
+      else groups.set(key, { bar, quantity: 1 });
+    });
+    return [...groups.values()];
   }
 
   function metric(label, value, unit = '') {
@@ -329,13 +348,13 @@ footer{display:flex;align-items:center;gap:15px;padding:20px 3px;color:#8b958e;f
       empty.textContent = '長尺材と取合材を入力すると、ここに切断プランが表示されます。';
       list.append(empty);
     }
-    bars.forEach((bar, index) => {
+    groupIdenticalPatterns(bars).forEach(({ bar, quantity }) => {
       const card = document.createElement('article');
       card.className = 'bar-card';
       const title = document.createElement('div');
       title.className = 'bar-title';
       const name = document.createElement('strong');
-      name.textContent = `${bar.name}　#${index + 1}`;
+      name.textContent = `${bar.name} ${bar.nominalLength.toLocaleString('ja-JP')}mm × ${quantity}`;
       const size = document.createElement('span');
       size.textContent = materialPlus
         ? `${bar.nominalLength.toLocaleString('ja-JP')} + ${materialPlus.toLocaleString('ja-JP')} = ${bar.length.toLocaleString('ja-JP')} mm`
@@ -356,10 +375,12 @@ footer{display:flex;align-items:center;gap:15px;padding:20px 3px;color:#8b958e;f
       track.append(leftover);
       const meta = document.createElement('div');
       meta.className = 'bar-meta';
-      const cutText = bar.cuts.map(cut => `${cut.name} ${cut.length.toLocaleString('ja-JP')}mm`).join('　・　');
+      const cutText = bar.cuts.map(cut => `${cut.length.toLocaleString('ja-JP')}mm`).join('　・　');
       const cuts = document.createElement('span');
+      cuts.className = 'bar-cuts';
       cuts.textContent = cutText;
       const remainder = document.createElement('span');
+      remainder.className = 'bar-remainder';
       remainder.textContent = `残り ${Math.max(0, bar.remaining).toLocaleString('ja-JP', { maximumFractionDigits: 1 })} mm`;
       meta.append(cuts, remainder);
       card.append(title, track, meta);
